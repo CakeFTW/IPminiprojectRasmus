@@ -32,7 +32,6 @@ bool edgeDetectBW(Mat &input, Mat &dest, int thresholdLow, int kernelSize) {
 
 	//copy input into larger image
 	Mat imgH(imgRows + increasedDimensions, imgCols + increasedDimensions, CV_8UC1);
-
 	uchar * p;
 	uchar * pl;
 
@@ -166,7 +165,7 @@ bool edgeDetectBW(Mat &input, Mat &dest, int thresholdLow, int kernelSize) {
 }
 
 int main() {
-	Mat img = imread("circle.jpg", CV_LOAD_IMAGE_GRAYSCALE);
+	Mat img = imread("ship.jpg", CV_LOAD_IMAGE_GRAYSCALE);
 	edgeDetectBW(img, img, NOTHRESHOLDING , 3);
 	imshow("edge detected", img);
 	waitKey(0);
