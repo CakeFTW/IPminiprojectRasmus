@@ -1,0 +1,398 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{todonotes}
+\usepackage{hyperref}
+\usepackage{amsmath}
+
+\usepackage{listings}
+\usepackage{color}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+	language = C++,
+	backgroundcolor=\color{backcolour},   
+	commentstyle=\color{codegreen},
+	keywordstyle=\color{magenta},
+	numberstyle=\tiny\color{codegray},
+	stringstyle=\color{codepurple},
+	basicstyle=\footnotesize,
+	breakatwhitespace=false,         
+	breaklines=true,                 
+	captionpos=b,                    
+	keepspaces=true,                 
+	numbers=left,                    
+	numbersep=5pt,                  
+	showspaces=false,                
+	showstringspaces=false,
+	showtabs=false,                  
+	tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\begin{document}
+
+\section{HORIZONTAL AND VERTICAL EDGE DETECTION }	
+I have developed an algorithm for detecting edges. In this document i aim to satisfy the requirements by 1). explaining the general flow of the algorithm, 2) show the code, 3) explain the different sections of the code described in 1. Finally i will show some output from the program in different stages of the algorithm.\todo{This order probably wont last}
+
+\subsection{Flow of algorithm}
+broadly speaking, the algorithm can be divided into 6 parts.
+\begin{description}
+	\item [Instantiate Variables] First we instantiate the variables that will be needed in the following steps, these mostly have to do with the dimensions of the kernel we will be using, also we check whether we are going to be doing thresholding.
+	\item [Create larger copy of input image] We need a larger image as neighbourhood processing will shrink the image size.
+	\item [Create horizontal kernel] using the different variables found in step 1. We create the horizontal kernel.
+	\item [Correlation with horizontal kernel] Find the horizontal edges using convolution.
+	\item [Create vertical kernel] yup.
+	\item [Correlation with vertical kernel + find gradient of edge + thresholding] The last step contains a bunch of operations, but it made more sense to do the operations that would be done at the end (finding gradient and thresholding) here rather than create additional for loops.
+\end{description}
+
+insert flowChart here
+\todo{Create flowchart}
+\subsection{Full Code}
+I have made a public git repo with the source c++ code and a test image.\\ It can be found here \url{https://github.com/CakeFTW/IPminiprojectRasmus}. 
+I have also included the full code in the appendices. But it is quiet fat, taking up 3 pages. Read the code whichever way you prefer.
+
+\subsection{Closer look at the steps}
+A substantial amount of the code exist only because the algorithm can crate a kernel of any allowable size at runtime. As such if someone wanted to use a 115 x 115 kernel they could. If one only allowed 3x3 kernels, which is the most widely used sobel kernel, aleast 50\% of the code could be gotten rid of.
+\subsubsection{Initializing the variables, and what they mean}
+When the code runs a few things are known from the arguments. Firstly we have the image that where edges should be detected, we know where the data is to be sent, and we know the kernel size the we need to create, and the threshold that will be used for thresholding. First we check that the requested kernel size is a size that makes sense.
+\begin{lstlisting}
+	if (kernelSize % 2 != 1) { return false; }
+\end{lstlisting}
+Currently the algorithm does not support even sized kernels e.g (2x2 , 4x4 ...etc). However if this check clears, we know that the kernel will work, and so we create a number of variables that have to do with the dimensions of the kernel.
+\begin{lstlisting}
+	int increasedDimensions = kernelSize - 1;
+	int borderSize = increasedDimensions / 2;
+	int distCenter = borderSize + 1;
+	int imgRows = input.rows;
+	int imgCols = input.cols;
+	int matrixSize = kernelSize * kernelSize;
+	int * kernel = new int[matrixSize];
+	int thresLow = thresholdLow;
+	bool doThresholding = (thresLow != NOTHRESHOLDING);
+\end{lstlisting}
+These will be used to create the kernels, and control the convolution on the image. Here's the dimensions they represent on the kernel.\\
+ %images go here
+These variables give valuable data. For example, increased dimensions tell us how much bigger we must make an image to have convolution result in an image of the same size. borderSize gives us a way to access the same relative pixel in images of different sizes. distCenter represent the amount of iterations needed to make sure you covered half of the kernels size. Matrix is used to iterate through the kernel.\\
+Beside these we have some variables related to  thresholding. Firstly, thresLow which tells us at what intensity we should threshold, and following that doThresholding, which tell us whether we should threshold at all. If the threshold is set to 700, a value that makes no sense to threshold on with 255 levels of intensity, we do not threshold. Now we are ready to create the larger image used for convolution.
+\subsubsection{Create larger copy of input image}
+Since convolution with a kernel larger than 1x1(so really anything that is not point processing) reduces the size of our image (by half the size of the kernel rounded down) we need to create a larger image.
+Firstly, we instantiate a Mat that is increasedDimension larger in height and width. We also declare two pointers that will be used to point at pixel values. One pointer will point to a pixel in the image we are copying from, and the other will point to the corresponding pixel in the image we are copying to.
+\begin{lstlisting}
+ 	Mat imgH(imgRows + increasedDimensions, imgCols + increasedDimensions, CV_8UC1);
+ 	uchar * p;
+ 	uchar * pl;
+\end{lstlisting}
+Copying is just looping through the original image and setting the value that you find to be the same in the image you copy to. Since one image is larger than the other we have to place the pixels slightly differently\todo{Finish writing this}
+In regards to accessing the value of individual pixels openCV has an .at<uchar>(y,x) method that will get you the individual pixel. But that method is slow. It is faster to access pixels using pointers\footnote{Pointer access in OpenCV: \url{https://docs.opencv.org/2.4/doc/tutorials/core/how_to_scan_images/how_to_scan_images.html}}.
+\begin{lstlisting}
+	for (int x = 0; x < imgRows; x++) {
+		p = input.ptr<uchar>(x);
+		pl = imgH.ptr<uchar>(x + borderSize);
+		for (int y = 0; y < imgCols; y++) {
+			pl[y + borderSize] = p[y];
+		}
+	}
+\end{lstlisting}
+The above code gets a pointer to the first pixel in each row, and then increments that pointer a number of times equal to image's width. This way we can get access to each pixel in a faster way. At each pixel we copy the value into the same region + the border size.
+We now have a copy of the original image, but with a larger border. Correlation with the kernel should now result in an image of the same size as the original. Now we can create the kernel.
+\todo{Make hyperlinks not have ugly red square}
+\subsubsection{creating the kernel}
+The original sobel used two 3 x 3 matrices\footnote{Sobel Operator on wikipedia : \url{https://en.wikipedia.org/wiki/Sobel_operator}}. However various people have made suggestions as to what a larger Sobel kernel might look like. I have implemented the one suggested at \footnote{Larger Sobel Kernels : \url{https://imagej.nih.gov/nih-image/download/user-macros/slowsobel.macro}}. Below is the original 3 by 3 Sobel and a corresponding 7 by 7 matrix.
+\[
+OriginalGangsterSobelHorizontalKernel=
+\begin{bmatrix}
+1 & 0 & -1 \\
+2 & 0 & -2 \\
+1 & 0 & -1 
+\end{bmatrix}
+\]
+
+\[
+NewKidAtTheBlockHorizontalKernel=
+\begin{bmatrix}
+3 & 2 & 1 & 0 & -1 & -2 & -3\\
+4 & 3 & 2 & 0 & -2 & -3 & -4\\
+5 & 4 & 3 & 0 & -3 & -4 & -5\\
+6 & 5 & 4 & 0 & -4 & -5 & -6\\
+5 & 4 & 3 & 0 & -3 & -4 & -5\\
+4 & 3 & 2 & 0 & -2 & -3 & -4\\
+3 & 2 & 1 & 0 & -1 & -2 & -3
+\end{bmatrix}
+\]
+So for each column it starts with a number, starting with how much larger it is in each direction than a 1 x 1 matrix(in the 7x7 case it is 3 larger). Notice that this number corresponds to our variable BorderSize. Then the row below it is one larger, if it is above the center of the matrix, or one smaller, if it is below the middle. Also the matrix is mirrored in the horizontal direction. And mirrored negatively in along the middle axis. This means that we can assign four values at the same time. 
+\begin{lstlisting}
+int startAt = borderSize; int * row1; int * row2;
+
+for (int i = 0; i < distCenter; i++) {
+	row1 = (kernel + (i * kernelSize));
+	row2 = (kernel + ((increasedDimensions - i) * kernelSize));
+	for (int j = 0; j < distCenter; j++) {
+		if (j == borderSize) {
+		*(row1 + j) = 0;
+		*(row2 + j) = 0;
+		continue;
+		}
+		*(row1 + j) = startAt - j;	
+		*(row1 + increasedDimensions - j) = -(startAt - j);
+		*(row2 + j) = startAt - j;
+		*(row2 + increasedDimensions - j) = -(startAt - j);
+	}
+	startAt++;
+}
+\end{lstlisting}
+The first for loop get pointers to the start of two rows. Row i from the top, and row i from the bottom. I can do this because kernel is a one dimensional array, and i know that each row is kernelSize wide. For example, getting the address of the first index and adding two times the kernelSize will get me access to the third row. The reason im using two pointers is that as mentioned above, the matrix is mirrored horizontally, so we might as well get the corresponding row below the middle.\\\\
+The inner forloop loops through the columns. Adding increasedDimensions to the start of a row, gets us the last index in the row. This way we can assign all the positive and negative values at the same time. Say we have to assign a two. Due to the layout of the matrix we can not assign 2 to the mirrored row below, and - 2 to the two row opposite those as can be seen in figure\todo{Make A figure}. The resulting order of initialization can be seen in figure\todo{make a figure, again}
+\todo{make some graphic here.}
+\\
+While one usually do not normalize the filter response when using sobel kernels, I found that at large sizes the output values were way to high to handle in usigned chars. So a weak normalization happens when the kernel size is larger than 3.
+\begin{lstlisting}
+float normalization = 0;
+//find the nomalization
+for (int t = 0; t < matrixSize; t++) {
+	int val = *(kernel + t);
+	if (val < 0) {val *= -1;}
+	normalization += val;
+}
+normalization = normalization / 8;
+\end{lstlisting}
+The kernel is an array of ints. The above code iterates through it, and adds the absolute values of all indexes together. For a 3x3 kernel the result will be 8. Since we want no changes at this size we divide the sum by 8. Now a 3x3 kernel will result in a normalized filter response of 1(no change).\\
+Now we have a kernelSize x kernelSize kernel. Time to do convolution using it.
+
+\subsubsection{Correlation with created kernel}
+Correlation is accomplished by placing the middle of the kernel atop each pixel. Then multiplying the values in the kernel by the pixel they cover's intensity. This is done of each element in the kernel and the total value is added together. Due to the negatively mirrored nature of the kernel, if we have the same intensity each side of the center, it will produce an output of 0. Accordingly large changes in intensity will produce large results that are either positive or negative. For this reason we must take the absolute value. Finally because we are working with uchars, we must ensure that the value cannot be higher than 255. Uchars have a size of 8 bits, and trying to store larger values in it will result in inaccuracies. This is because all bits but the last 8 will be disregarded when casting. So a number like 258 which in 2 byte integer would be stored as -00000001-00000010 would, when converted to a uchar be stored as -00000010-, or in human speak the number two. It is a bit trickier what happens when casting from floats to uchars, but suffice it to say that ensuring the value is within range is always a good idea. Here is how i have implemented the this.
+\begin{lstlisting}
+float total = 0;
+int x, y, i, j;
+uchar * row = imgH.ptr<uchar>(0);
+float val = 0;
+int currentRow = -1;
+//correlation
+for (x = 0; x < imgRows; x++) {
+p = dest.ptr<uchar>(x);
+	for (y = 0; y < imgCols; y++) {
+		currentRow = -1;
+		val = 0;
+		for (i = 0; i < matrixSize; i++) {
+			if ((i % kernelSize) == 0) {
+				currentRow++;
+				row = imgH.ptr<uchar>(x + currentRow);
+			}
+			val += row[y + (i%kernelSize)] * kernel[i];
+		}
+		val = val / normalization;
+		if (val < 0) {val *= -1;}
+		if (val > 255) {val = 255;}
+		p[y] = val;
+	}
+}
+\end{lstlisting} 
+You will recognize the first from some code snippets above. It is a double for loop that accesses each pixel in the destination image. Nested inside that is a for loop that multiplies each element in the kernel by the corresponding pixel in the image.\\
+\todo{More explanation of how matching the kernel with the pixels work}
+
+
+
+\subsubsection{Vertical Edge detection}
+Now that the destination material contains the values from the horizontal edge detection it is time to dive into the vertical edge detection. However this is exceedingly similar to horizontal edge detection, with only two major differences. Firstly, the kernel is different. In reality it is the Horizontal kernel rotated 90 degrees, but it is technically different and as you might expect it is created using a different double for loop. This is where i come clean though, exactly because it is so similar i have chosen not to include the code for that in this explanation. It does not introduce anything new. But it is in the source code if you wanna have a look. A finished 7x7 kernel looks like this.\\
+\[
+BigBoiVerticalKernel=
+\begin{bmatrix}
+3 & 4 & 5 & 6 & 5 & 4 & 3\\
+2 & 3 & 4 & 5 & 4 & 3 & 2\\
+1 & 2 & 3 & 4 & 3 & 2 & 1\\
+0 & 0 & 0 & 0 & 0 & 0 & 0\\
+-1& -2& -3& -4& -3 & -2 & -1\\
+-2& -3& -4& -5& -4 & -3 & -2\\
+-3& -4& -5& -6& -5 & -4 & -3
+\end{bmatrix}
+\]
+The only other meaty difference is an additional step that happens after correlation. With the addition of vertical gradients we now have the magnitude of intensity change in both horizontal and vertical direction. We can now compute the total magnitude of intensity change. This work much the same as it does with vectors. The magnitude of intensity change, \(G\), can be calculated as follows.\\
+\begin{center}
+	\(G = \sqrt{{G_x}^2 + {G_y}^2}\)
+\end{center}
+Where \({G_x}\) represents the gradient in the x direction, and \({G_y}\) represents the the gradient in the y direction. This happens inside the correlation double for loop. My implementation looks like this.
+\begin{lstlisting}
+	//inside the double for loop, val now comtains the y gradient 
+	val = sqrt(p[y] * p[y] + val * val);
+	if (doThresholding) {
+		if (val < thresLow) { val = 0;
+		} else {
+			val = 255;
+			}
+	}else {
+		if (val > 255) {val = 255;}
+	}
+	p[y] = val;
+	}
+\end{lstlisting}
+First we calculate \(G\), and store it in val. Then if we do thresholding, we check the value to see if smaller than thresholdLow. If it is, we set it's value to 0, otherwise it must be at or above the threshold and we set it to be 255. If thresholdLow has been set to NOTHRESHOLDING, all we have to do is ensure the value is not larger than can be stored in 8 bits, since magnitude cannot be negative we needn't check if it below 0.\\
+Now the destination image contain the edge detected and thresholded image.
+\subsection{The output at various steps}
+Images go here
+
+\subsection{Appendices}
+\todo{Format this mess}
+\begin{lstlisting}
+#include <iostream> 
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/core.hpp"
+#include <stdio.h>
+#include "opencv2/opencv.hpp"
+#include <windows.h> 
+#include <cmath>
+const int NOTHRESHOLDING = 700;
+using namespace cv;
+using namespace std;
+
+bool edgeDetectBW(Mat &input, Mat &dest, int thresholdLow, int kernelSize) {
+
+//setting up variables
+if (kernelSize % 2 != 1) { return false; }
+int increasedDimensions = kernelSize - 1;
+int borderSize = increasedDimensions / 2;
+int distCenter = borderSize + 1;
+int imgRows = input.rows;
+int imgCols = input.cols;
+int matrixSize = kernelSize * kernelSize;
+int * kernel = new int[matrixSize];
+int thresLow = thresholdLow;
+bool doThresholding = (thresLow != NOTHRESHOLDING);
+
+
+//copy input into larger image
+Mat imgH(imgRows + increasedDimensions, imgCols + increasedDimensions, CV_8UC1);
+
+uchar * p;
+uchar * pl;
+
+for (int x = 0; x < imgRows; x++) {
+p = input.ptr<uchar>(x);
+pl = imgH.ptr<uchar>(x + borderSize);
+for (int y = 0; y < imgCols; y++) {
+pl[y + borderSize] = p[y];
+}
+}
+
+//generate horizontal kernel
+int startAt = borderSize;
+int * row1;
+int * row2;
+for (int i = 0; i < distCenter; i++) {
+row1 = (kernel + (i * kernelSize));
+row2 = (kernel + ((increasedDimensions - i) * kernelSize));
+for (int j = 0; j < distCenter; j++) {
+if (j == borderSize) {
+*(row1 + j) = 0;
+*(row2 + j) = 0;
+continue;
+}
+*(row1 + j) = startAt - j;
+*(row1 + increasedDimensions - j) = -(startAt - j);
+*(row2 + j) = startAt - j;
+*(row2 + increasedDimensions - j) = -(startAt - j);
+}
+startAt++;
+}
+float normalization = 0;
+//find the nomalization
+for (int t = 0; t < matrixSize; t++) {
+int val = *(kernel + t);
+if (val < 0) {val *= -1;}
+normalization += val;
+}
+normalization = normalization / 8;
+
+//convolution
+float total = 0;
+int x, y, i, j;
+
+uchar * row = imgH.ptr<uchar>(0);
+float val = 0;
+int currentRow = -1;
+for (x = 0; x < imgRows; x++) {
+p = dest.ptr<uchar>(x);
+for (y = 0; y < imgCols; y++) {
+currentRow = -1;
+val = 0;
+for (i = 0; i < matrixSize; i++) {
+if ((i % kernelSize) == 0) {
+currentRow++;
+row = imgH.ptr<uchar>(x + currentRow);
+}
+val += row[y + (i%kernelSize)] * kernel[i];
+}
+val = val / normalization;
+if (val < 0) {val *= -1;}
+if (val > 255) {val = 255;}
+p[y] = val;
+}
+}
+//generate vertical kernel
+startAt = borderSize;
+for (int i = 0; i < distCenter; i++) {
+row1 = (kernel + (i * kernelSize));
+row2 = (kernel + ((increasedDimensions - i) * kernelSize));
+for (int j = 0; j < distCenter; j++) {
+if (i == borderSize ) {
+*(row1 + j) = 0;
+*(row1 + increasedDimensions - j) = 0;
+continue;
+}
+*(row1 + j) = startAt + j;
+*(row1 + increasedDimensions - j) = (startAt + j);
+*(row2 + j) = - (startAt + j);
+*(row2 + increasedDimensions - j) = -(startAt + j);
+}
+startAt--;
+}
+//convolution 
+for (x = 0; x < imgRows; x++) {
+p = dest.ptr<uchar>(x);
+for (y = 0; y < imgCols; y++) {
+currentRow = -1;
+val = 0;
+for (i = 0; i < matrixSize; i++) {
+if ((i % kernelSize) == 0) {
+currentRow++;
+row = imgH.ptr<uchar>(x + currentRow);
+}
+val += row[y + (i%kernelSize)] * kernel[i];
+}
+val = val / normalization;
+if (val < 0) {val *= -1;}
+if (val > 255) {val = 255;}
+val = sqrt(p[y] * p[y] + val * val);
+if (doThresholding) {
+if (val < thresLow) {
+val = 0;
+} else {
+val = 255;
+}
+}else {
+if (val > 255) {val = 255;}
+}
+p[y] = val;
+}
+}
+delete[]kernel;
+return true;
+}
+
+int main() {
+Mat img = imread("ship.jpg", CV_LOAD_IMAGE_GRAYSCALE);
+edgeDetectBW(img, img, NOTHRESHOLDING , 3);
+imshow("edge detected", img);
+waitKey(0);
+return 0;
+}
+
+\end{lstlisting}
+
+
+
+
+\end{document}
